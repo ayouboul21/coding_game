@@ -136,7 +136,6 @@ vector<pair<int, int>> find_path(map<pair<int, int>, block>& grid, pair<int, int
     pair<int, int> current = came_from[target];
     while (current != start) {
         if (grid[current].owner == 1 && (grid[current].type == "BASIC" || grid[current].type == "TENTACLE" || grid[current].type == "SPORER" || grid[current].type == "HARVESTER")) {
-            cerr << "got here" << endl;
             break;
         }
         path.push_back(current);
@@ -277,6 +276,55 @@ map<string, pair<int, int>> find_closest_proteins(const map<pair<int, int>, bloc
     return closest_coordinates;
 }
 
+vector<pair<int, int>> findLongestStraightStreak(const vector<pair<int, int>>& path) {
+    vector<pair<int, int>> longestStreak; // To store the longest straight path
+    vector<pair<int, int>> currentStreak; // Temporary straight path tracker
+
+    pair<int, int> lastDirection = {0, 0}; // Track the last valid direction
+
+    for (size_t i = 0; i < path.size(); i++) {
+        if (currentStreak.empty()) {
+            // Initialize the straight path with the first coordinate
+            currentStreak.push_back(path[i]);
+        } else {
+            // Calculate direction between the current and previous points
+            int dx = path[i].first - currentStreak.back().first;
+            int dy = path[i].second - currentStreak.back().second;
+
+            // Normalize direction for comparison
+            pair<int, int> direction = {dx, dy};
+
+            if (currentStreak.size() == 1 || direction == lastDirection) {
+                // Continue the straight path
+                currentStreak.push_back(path[i]);
+                lastDirection = direction;
+            } else {
+                // Reset the straight path tracker
+                currentStreak.clear();
+                currentStreak.push_back(path[i - 1]);
+                currentStreak.push_back(path[i]);
+                lastDirection = direction;
+            }
+        }
+
+        // Update the longest streak if needed
+        if (currentStreak.size() > longestStreak.size()) {
+            longestStreak = currentStreak;
+        }
+    }
+
+    return longestStreak;
+}
+
+// Function to find the spore coordinate
+pair<int, int> sporeCoordinate(const vector<pair<int, int>>& streak) {
+    if (streak.size() >= 3) {
+        return streak[0];
+    }
+
+    return {-1, -1};
+}
+
 pair<int, int> get_root_cords(const vector<block>& my_organs) {
     for (const auto& organ : my_organs) {
         if (organ.type == "ROOT") {
@@ -362,10 +410,54 @@ void find_next_move(map<pair<int, int>, block> &grid, vector<pair<int, int>> pat
         cout << "GROW " << get_id_to_grow_from(grid, path[0]) << " " << path[0].first << " " << path[0].second << " HARVESTER " << getDirection(path[0], proteinCord) << endl;
     }
 }
-// Function to find the next move to go in the path
+
+int get_cost(vector<pair<int, int>> path, vector<pair<int, int>> streak, my_proteins &pt)
+{
+    int costa = 1;
+    int costb = 2;
+    int costc = 1;
+    int costd = 2;
+
+    costa += path.size() - streak.size() - 1;
+    costc++;
+    costd++;
+    cerr << (pt.my_a < costa || pt.my_b < costb || pt.my_c < costc || pt.my_d < costd) << endl;
+    if (pt.my_a < costa || pt.my_b < costb || pt.my_c < costc || pt.my_d < costd)
+        return 2147483647;
+    return costa;
+}
+
+void    spore_function(map<pair<int, int>, block> &grid, vector<pair<int, int>> path, pair<int, int> rootCords, my_proteins &pt, pair<int, int> proteinCord, vector<pair<int, int>> streak, int &spored)
+{
+    static int spore = 0;
+    static int x = -1;
+    static int y = -1;
+    pair<int, int> sporeCord = sporeCoordinate(streak);
+    if (path[0] == sporeCord && !spore)
+    {
+        cout << "GROW " << get_id_to_grow_from(grid, path[0]) << " " << path[0].first << " " << path[0].second << " SPORER " << getDirection(path[0], path[1]) << endl;
+        x = path[0].first;
+        y = path[0].second;
+        spore = 1;
+    }
+    else if (spore)
+    {
+        cout << "SPORE " << grid[{x, y}].organ_id << " " << streak[streak.size() - 1].first << " " << streak[streak.size() - 1].second << endl;
+        spored = 1;
+    }
+    else
+    {
+        find_next_move(grid, path, rootCords, pt, proteinCord);
+    }
+}
 
 void simulate(map<pair<int, int>, block> &grid, my_proteins &pt, map<string, pair<int, int>>& closest, pair<int, int> rootCords)
 {
+    vector<pair<int, int>> pathA = find_path(grid, rootCords, closest["A"]);
+    vector<pair<int, int>> pathB = find_path(grid, rootCords, closest["B"]);
+    vector<pair<int, int>> pathC = find_path(grid, rootCords, closest["C"]);
+    vector<pair<int, int>> pathD = find_path(grid, rootCords, closest["D"]);
+    static int spore = 0;
     int m;
     vector<int> list;
     if (!grid[closest["A"]].harvested)
@@ -380,50 +472,85 @@ void simulate(map<pair<int, int>, block> &grid, my_proteins &pt, map<string, pai
         m = -1;
     else
         m = *min_element(list.begin(), list.end());
-    if(m == pt.my_a && !grid[closest["A"]].harvested)
+    if (pt.my_a >= 1 && pt.my_b >= 2 && pt.my_c >= 1 && pt.my_d >= 2 && !spore)
     {
-        vector<pair<int, int>> path = find_path(grid, rootCords, closest["A"]);
+        cerr << "dkhel lspore" << endl;
+        vector<pair<int, int>> streakA = findLongestStraightStreak(pathA);
+        vector<pair<int, int>> streakB = findLongestStraightStreak(pathB);
+        vector<pair<int, int>> streakC = findLongestStraightStreak(pathC);
+        vector<pair<int, int>> streakD = findLongestStraightStreak(pathD);
+        int costA = get_cost(pathA, streakA, pt);
+        int costB = get_cost(pathB, streakB, pt);
+        int costC = get_cost(pathC, streakC, pt);
+        int costD = get_cost(pathD, streakD, pt);
+        vector<int> costs = {};
+        static int i = 0;
+        costs.push_back(costA);
+        costs.push_back(costB);
+        costs.push_back(costC);
+        costs.push_back(costD);
+        sort(costs.begin(), costs.end());
+        while (!costs[i])
+            i++;
+        cerr << "minCost: " << costs[i] << endl;
+        if (costs[i] == 2147483647)
+        {
+            if(!grid[closest["A"]].harvested)
+                find_next_move(grid, pathA, rootCords, pt, closest["A"]);
+            else
+                cout << "WAIT" << endl;
+            return;
+        }
+        if (costs[i] == costA)
+            spore_function(grid, pathA, rootCords, pt, closest["A"], streakA, spore);
+        else if (costs[i] == costB)
+            spore_function(grid, pathB, rootCords, pt, closest["B"], streakB, spore);
+        else if (costs[i] == costC)
+            spore_function(grid, pathC, rootCords, pt, closest["C"], streakC, spore);
+        else if (costs[i] == costD)
+            spore_function(grid, pathD, rootCords, pt, closest["D"], streakD, spore);
+        i = 0;
+    }
+    else if(m == pt.my_a && !grid[closest["A"]].harvested)
+    {
         //print the path in cerr
         cerr << "A ";
-        for(auto p : path)
+        for(auto p : pathA)
         {
             cerr << p.first << " " << p.second << " ";
         }
         cerr << endl;
-        find_next_move(grid, path, rootCords, pt, closest["A"]);
+        find_next_move(grid, pathA, rootCords, pt, closest["A"]);
     }
     else if(m == pt.my_b && !grid[closest["B"]].harvested)
     {
-        vector<pair<int, int>> path = find_path(grid, rootCords, closest["B"]);
         cerr << "B ";
-        for(auto p : path)
+        for(auto p : pathB)
         {
             cerr << p.first << " " << p.second << " ";
         }
         cerr << endl;
-        find_next_move(grid, path, rootCords, pt, closest["B"]);
+        find_next_move(grid, pathB, rootCords, pt, closest["B"]);
     }
     else if(m == pt.my_c && !grid[closest["C"]].harvested)
     {
-        vector<pair<int, int>> path = find_path(grid, rootCords, closest["C"]);
         cerr << "C ";
-        for(auto p : path)
+        for(auto p : pathC)
         {
             cerr << p.first << " " << p.second << " ";
         }
         cerr << endl;
-        find_next_move(grid, path, rootCords, pt, closest["C"]);
+        find_next_move(grid, pathC, rootCords, pt, closest["C"]);
     }
     else if(m == pt.my_d && !grid[closest["D"]].harvested)
     {
-        vector<pair<int, int>> path = find_path(grid, rootCords, closest["D"]);
         cerr << "D ";
-        for(auto p : path)
+        for(auto p : pathD)
         {
             cerr << p.first << " " << p.second << endl;
         }
         cerr << endl;
-        find_next_move(grid, path, rootCords, pt, closest["D"]);
+        find_next_move(grid, pathD, rootCords, pt, closest["D"]);
     }
     else
     {
@@ -570,13 +697,14 @@ int main()
 
             // Write an action using cout. DON'T FORGET THE "<< endl"
             // To debug: cerr << "Debug messages..." << endl;
+            cerr << i << endl;
             if (i == 0)
                 simulate(grid, pt, closest, rootCords);
             else if (i == 1)
-                cout << "WAIT" << endl;
+                cout << "WAITING" << endl;
         }
         empty(proteins);
-        empty(my_organs);
-        empty(enemy_organs);
+        // empty(my_organs);
+        // empty(enemy_organs);
     }
 }
